@@ -72,7 +72,7 @@ class OpticalFlowVelNode(Node):
         self.yfocal = camera_matrix[1, 1]
         self.Cx = camera_matrix[2, 2]
         self.Cy = camera_matrix[1, 2]
-        self.z = 1300
+        self.z = 1100
         self.frame_count = 0
         self.param_factor = 50/30.24727637
         self.Flag = 0
@@ -92,16 +92,16 @@ class OpticalFlowVelNode(Node):
         self.prev_time = None
         self.delta_t = 0
         self.distance = 0
-        self.measure_theta = 0
-        self.is_twist = 0
+        self.a_x = 0
+        self.a_y = 0
 
         # Initialize Kalman filter variables]
   # Initial state estimate [position, velocity]
   
         self.X = np.zeros((4,1))
         self.P = np.eye(4)         # Initial covariance matrix
-        self.Q = np.eye(4) * 0.01  # Process noise covariance
-        self.R = np.eye(4) * 0.1  # Measurement noise covariance
+        self.Q = np.eye(4) * 0.03  # Process noise covariance
+        self.R = np.eye(4) * 0.08  # Measurement noise covariance
   # State transition matrix
         self.H = np.array([[1, 0, 0, 0],
                            [0, 1, 0, 0],
@@ -132,7 +132,7 @@ class OpticalFlowVelNode(Node):
           self.Flag += 1
         else:
          if np.linalg.norm(step) !=0:
-            trans_product = np.dot(rotation_matrix, np.array((-step[0], step[1])))
+            trans_product = np.dot(rotation_matrix, np.array((step[0], -step[1])))
             
             self.point = self.point+trans_product
         #self.point = [self.point[0]+step[0], self.point[1]-step[1]]
@@ -234,6 +234,9 @@ class OpticalFlowVelNode(Node):
 
         x = self.precentile_fillter(90, p_vector[:,0])
         y = self.precentile_fillter(90, p_vector[:,1])
+        min_size = min(x.shape[0], y.shape[0])
+        x = x[:min_size]
+        y = y[:min_size]
         r_vector = np.column_stack((x, y))
         self.is_twist = self.check_vector(r_vector[:,1], r_vector[:,0])
         r_vector = np.array((float(np.mean(r_vector[:,0])), float(np.mean(r_vector[:,1]))))
@@ -335,11 +338,11 @@ class OpticalFlowVelNode(Node):
      cosy_cosp = 1.0 - 2.0 * (quaternion.y * quaternion.y + quaternion.z * quaternion.z)
      self.angle = np.rad2deg(np.arctan2(siny_cosp, cosy_cosp)) - 90 
      
-     a_x = imu_msg.linear_acceleration.x
-     a_y = imu_msg.linear_acceleration.y
-     a = np.sqrt(a_x**2 + a_y**2)
+     self.a_x = imu_msg.linear_acceleration.x
+     self.a_y = imu_msg.linear_acceleration.y
+     a = np.sqrt(self.a_x**2 + self.a_y**2)
 
-     u = np.array([[a_x], [a_y]])
+     u = np.array([[self.a_x], [self.a_y]])
      self.X = np.dot(self.A, self.X) + np.dot(self.B, u) 
      self.P = np.dot(np.dot(self.A, self.P), self.A.T) + self.Q
      #self.P = np.dot(np.dot(self.A, self.P), self.A.T) + np.dot(self.B, self.B.T)*0.01**2
@@ -348,7 +351,7 @@ class OpticalFlowVelNode(Node):
     #def callback_image(self, image_msg, imu_msg):
     def callback_image(self, image_msg):
        self.frame = self.cv_bridge.compressed_imgmsg_to_cv2(image_msg,'bgr8')
-       
+       self.frame = self.frame[0:500, 200:1200]
 
       #  h, w = self.frame.shape[:2]
       #  newCameraMatrix, roi = cv2.getOptimalNewCameraMatrix(camera_matrix, distortion_coefficients, (w, h), 1, (w, h))
@@ -398,13 +401,13 @@ class OpticalFlowVelNode(Node):
            self.P = np.dot((np.eye(4) - np.dot(K_k, self.H)), self.P)
          
            if self.is_filter == True:
-            self.publish_marker(self.X[:2,0], self.angle, "with_filter")
+            self.publish_marker(self.X[:2,0], -self.angle, "with_filter")
            else:
-            self.publish_marker(real_vector, self.angle, "without_filter")
+            self.publish_marker(real_vector, -self.angle, "without_filter")
 
 
-           self.distance += np.linalg.norm(real_vector)
-           print(self.angle)
+           self.distance += np.linalg.norm(self.X[:2,0])
+           print(self.distance)
          
            if self.counter == 0:
              self.ave_dist_list = np.mean(ave_dist)
@@ -424,7 +427,7 @@ class OpticalFlowVelNode(Node):
                 cv2.putText(self.img, "Velocity: 0.0 [M/s]", (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 0, 0), 2)
            else:
                 cv2.putText(self.img, f"Velocity: {ave_vel: .1f} [M/s]", (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 0, 0), 2)
-           cv2.arrowedLine(self.img, (500, 30), (500+(int(img_vector[0]))*-6, 30+(int(img_vector[1]))*-6), (255, 0, 0), thickness=4, tipLength=1)
+           cv2.arrowedLine(self.img, (int(self.frame.shape[1]-self.frame.shape[1]/10), int(self.frame.shape[0]/10)), (int(self.frame.shape[1]-self.frame.shape[1]/10)+(int(img_vector[0]))*-6, int(self.frame.shape[0]/10)+(int(img_vector[1]))*-6), (255, 0, 0), thickness=4, tipLength=1)
        self.prev_gray = frame_gray
        mask = np.zeros_like(frame_gray)
        mask[:] = 255

@@ -1,0 +1,31 @@
+<launch>
+
+    <!-- variables -->
+    
+    <let name="urdf_path" 
+         value="$(find-pkg-share g2_robot_description)/urdf/g2_robot.urdf.xacro" />
+         
+    <let name="rviz_config_path"
+         value="$(find-pkg-share g2_robot_bringup)/rviz/urdf_config.rviz" /> <!-- can change between *depth*_urdf_config.rviz to only urdf_config.rviz-->
+
+    <let name="gazebo_launch_path"
+         value="$(find-pkg-share gazebo_ros)/launch/gazebo.launch.py" />
+
+    <!-- nodes -->
+
+    <node pkg="robot_state_publisher" exec="robot_state_publisher">
+        <param name="robot_description"
+               value="$(command 'xacro $(var urdf_path)')" />
+    </node>
+
+    <include file="$(var gazebo_launch_path)">
+          <arg name="world" value="$(find-pkg-share g2_robot_bringup)/worlds/decorated_walls_market.world" />
+    </include>
+
+    <node pkg="gazebo_ros" exec="spawn_entity.py" 
+          args="-topic robot_description -entity g2_robot -x -8.0 -y 11.0" />
+    
+    <node pkg="rviz2" exec="rviz2" 
+          output="screen" args="-d $(var rviz_config_path)" />
+
+</launch>

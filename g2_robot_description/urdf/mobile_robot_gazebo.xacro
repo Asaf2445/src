@@ -1,0 +1,102 @@
+<?xml version="1.0"?>
+<robot xmlns:xacro="http://www.ros.org/wiki/xacro">
+
+    <gazebo reference="base_link">
+        <!-- <material>Gazebo/Blue</material> -->
+    </gazebo>
+
+    <gazebo reference="rear_right_wheel_link">
+        <!-- <material>Gazebo/Yellow</material> -->
+        
+        <!-- <mu1 value="10" />
+        <mu2 value="10" /> -->
+    </gazebo>
+
+    <gazebo reference="rear_left_wheel_link">
+        <!-- <material>Gazebo/Yellow</material> -->
+        <!-- <mu1 value="10" />
+        <mu2 value="10" /> -->
+    </gazebo>
+
+    <gazebo reference="front_right_wheel_link">
+        <!-- <material>Gazebo/Yellow</material> -->
+        <!-- <mu1 value="10" />
+        <mu2 value="10" /> -->
+    </gazebo>
+
+    <gazebo reference="front_left_wheel_link">
+        <!-- <material>Gazebo/Yellow</material> -->
+        <!-- <mu1 value="10" />
+        <mu2 value="10" /> -->
+    </gazebo>
+<!-- filename="/path/to/skid_steer_drive/libDdsSkidSteerDrivePlugin.so" -->
+    <gazebo> 
+        <plugin name='skid_steer_drive' filename='libgazebo_ros_diff_drive.so'>
+            <!-- <ros>
+            <namespace>/demo</namespace>
+            <remapping>cmd_vel:=cmd_demo</remapping>
+            <remapping>odom:=odom_demo</remapping>
+            </ros> -->
+
+            <!-- Number of wheel pairs -->
+            <num_wheel_pairs>2</num_wheel_pairs>
+            
+            <!-- wheels front -->
+            <left_joint>front_left_wheel_joint</left_joint>
+            <right_joint>front_right_wheel_joint</right_joint>
+
+            <!-- wheels rear-->
+            <left_joint>rear_left_wheel_joint</left_joint>
+            <right_joint>rear_right_wheel_joint</right_joint>
+
+            <!-- kinematics -->
+            <wheel_separation>${base_width + wheel_lenght}</wheel_separation>
+            <wheel_separation>${base_width + wheel_lenght}</wheel_separation>
+
+            <wheel_diameter>${wheel_radius * 2.0}</wheel_diameter>
+            <wheel_diameter>${wheel_radius * 2.0}</wheel_diameter>
+
+            <!-- limits -->
+            <max_wheel_torque>20</max_wheel_torque>
+            <max_wheel_acceleration>1.0</max_wheel_acceleration>
+
+            <!-- output -->
+            <publish_odom>true</publish_odom>
+            <publish_odom_tf>true</publish_odom_tf>
+            <publish_wheel_tf>true</publish_wheel_tf>
+
+            <odometry_frame>odom</odometry_frame>
+            <robot_base_frame>base_footprint</robot_base_frame>
+
+        <!-- ********************************* THIS NEXT IS FROM WEB INDIAN GUY -->
+
+            <!-- <updateRate>20.0</updateRate>
+            <robotNamespace>/</robotNamespace>
+            <leftFrontJoint>front_left_wheel_joint</leftFrontJoint>
+            <rightFrontJoint>front_right_wheel_joint</rightFrontJoint>
+            <leftRearJoint>rear_left_wheel_joint</leftRearJoint>
+            <rightRearJoint>rear_right_wheel_joint</rightRearJoint>
+            <wheelSeparation>0.8</wheelSeparation>
+            <wheelDiameter>0.15</wheelDiameter>
+            <robotBaseFrame>base_footprint</robotBaseFrame>
+            <torque>10</torque>
+
+            <topicName>cmd_vel</topicName>
+            <odometryTopic>odom</odometryTopic>
+            <odometryFrame>odom</odometryFrame>
+
+            <commandTopic>cmd_vel</commandTopic>
+            <topic_name_twist>cmd_vel</topic_name_twist>
+            <topic_name_odometry>odom</topic_name_odometry>
+            <topic_name_joint>joint</topic_name_joint>
+
+            <broadcastTF>true</broadcastTF>
+
+            <covariance_x>0.0001</covariance_x>
+            <covariance_y>0.0001</covariance_y>
+            <covariance_yaw>0.01</covariance_yaw> -->
+
+        </plugin>
+    </gazebo>
+
+</robot>
