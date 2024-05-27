@@ -100,10 +100,10 @@ class OpticalFlowVelNode(Node):
   
         self.X = np.zeros((4,1))
         self.P = np.eye(4)         # Initial covariance matrix
-        self.Q = np.eye(4) * 0.03  # Process noise covariance
-        self.R = np.eye(4) * 0.08  # Measurement noise covariance
+        self.Q = np.eye(4) * 0.05  # Process noise covariance
+        self.R = np.eye(4) * 0.05  # Measurement noise covariance
   # State transition matrix
-        self.H = np.array([[1, 0, 0, 0],
+        self.H = np.array([[0, 0, 0, 0],
                            [0, 1, 0, 0],
                            [0, 0, 1, 0],
                            [0, 0, 0, 1]])  # Measurement matrix
@@ -245,7 +245,7 @@ class OpticalFlowVelNode(Node):
         #theta = self.get_theta(points1_undistorted_img[:,0],points1_undistorted_img[:,1],points2_undistorted_img[:,0], points2_undistorted_img[:,1]  )
        # self.measure_theta = self.measure_theta + theta
      
-        return ave_dist1, r_vector/1000, vector
+        return ave_dist1, r_vector/1000, vector/np.linalg.norm(vector)*5
        
     def get_theta(self,u0, v0, u1 ,v1):
     
