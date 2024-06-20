@@ -15,11 +15,10 @@ from geometry_msgs.msg import Point
 
 
 from std_msgs.msg import Header
-from geometry_msgs.msg import PoseStamped
+from geometry_msgs.msg import TransformStamped
+from tf2_ros import TransformBroadcaster
 
 from .camera_calibrate_params import camera_matrix, distortion_coefficients
-from rclpy.qos import QoSProfile, HistoryPolicy, ReliabilityPolicy
-
 
 import message_filters
 from message_filters import ApproximateTimeSynchronizer, Subscriber
@@ -35,6 +34,10 @@ class OpticalFlowVelNode(Node):
         self.fisheye_subscriber= self.create_subscription(CompressedImage,'/fisheye_cam/image_raw/compressed',self.callback_image, 10)
         self.gyro_subscriber= self.create_subscription(Imu,'/imu/data',self.imu_callback, 10)
 
+        self.tf_broadcaster = TransformBroadcaster(self)
+        self.t = TransformStamped()
+        self.t.transform.translation.x = 0.0
+        self.t.transform.translation.y = 0.0
 
         
         # self.cam_sub = Subscriber(self, CompressedImage, '/fisheye_cam/image_raw/compressed')
@@ -49,9 +52,7 @@ class OpticalFlowVelNode(Node):
         
         self.publisher_ = self.create_publisher(Image,'process_image', 10)
 
-        self.marker_publisher = self.create_publisher(Marker, "contour_marker_topic", 10)
-        self.pose_publisher = self.create_publisher(PoseStamped, 'pose_stamped_topic', 10)
-  
+        self.marker_publisher = self.create_publisher(Marker, "contour_marker_topic", 10)  
         
        
 
@@ -114,7 +115,7 @@ class OpticalFlowVelNode(Node):
     def publish_marker(self, step, theta, namespace):
         contour_marker = Marker()
         #contour_marker.header.frame_id = "camera_color_optical_frame"  # Change to your frame
-        contour_marker.header.frame_id = "map" 
+        contour_marker.header.frame_id = "world" 
         contour_marker.type = Marker.LINE_STRIP
         contour_marker.action = Marker.ADD
         contour_marker.scale.x = 0.1  # Line width
@@ -133,8 +134,9 @@ class OpticalFlowVelNode(Node):
         else:
          if np.linalg.norm(step) !=0:
             trans_product = np.dot(rotation_matrix, np.array((step[0], -step[1])))
-            
             self.point = self.point+trans_product
+            self.t.transform.translation.x =self.point[0]
+            self.t.transform.translation.y = self.point[1]
         #self.point = [self.point[0]+step[0], self.point[1]-step[1]]
         self.point_pub = Point(x=self.point[0], y=self.point[1], z=0.0)
         self.contour_points.append(self.point_pub) 
@@ -321,23 +323,27 @@ class OpticalFlowVelNode(Node):
                             [0, 0, 1, 0],
                             [0, 0, 0, 1]])
 
-     self.B = np.array([[self.delta_t**2/2, 0,],
-                            [0, self.delta_t**2/2],
+     self.B = np.array([    [   0,         0,],
+                            [   0,          0],
                             [self.delta_t, 0],
                             [0, self.delta_t]])     
-    
+
+     
+
      if self.prev_time is not None:
           current_time = imu_msg.header.stamp.sec + imu_msg.header.stamp.nanosec * 1e-9  # Convert nanoseconds to seconds
           self.delta_t = current_time - self.prev_time
       
 
      self.prev_time = imu_msg.header.stamp.sec + imu_msg.header.stamp.nanosec * 1e-9  # Convert nanoseconds to seconds
-     quaternion = imu_msg.orientation
+     self.quaternion = imu_msg.orientation
 
-     siny_cosp = 2.0 * (quaternion.w * quaternion.z + quaternion.x * quaternion.y)
-     cosy_cosp = 1.0 - 2.0 * (quaternion.y * quaternion.y + quaternion.z * quaternion.z)
-     self.angle = np.rad2deg(np.arctan2(siny_cosp, cosy_cosp)) - 90 
+     siny_cosp = 2.0 * (self.quaternion.w * self.quaternion.z + self.quaternion.x * self.quaternion.y)
+     cosy_cosp = 1.0 - 2.0 * (self.quaternion.y * self.quaternion.y + self.quaternion.z * self.quaternion.z)
+     self.angle = np.rad2deg(np.arctan2(siny_cosp, cosy_cosp)) - 90
      
+
+
      self.a_x = imu_msg.linear_acceleration.x
      self.a_y = imu_msg.linear_acceleration.y
      a = np.sqrt(self.a_x**2 + self.a_y**2)
@@ -399,6 +405,17 @@ class OpticalFlowVelNode(Node):
            K_k = np.dot(np.dot(self.P, self.H.T), np.linalg.inv(S_k))
            self.X = self.X + np.dot(K_k, y_k) 
            self.P = np.dot((np.eye(4) - np.dot(K_k, self.H)), self.P)
+
+           self.t.header.stamp = self.get_clock().now().to_msg()
+           self.t.header.frame_id = 'world'
+           self.t.child_frame_id = 'odom'
+           self.t.transform.rotation.x = self.quaternion.x
+           self.t.transform.rotation.y = self.quaternion.y
+           self.t.transform.rotation.z = -self.quaternion.z 
+           self.t.transform.rotation.w = self.quaternion.w 
+          
+           self.tf_broadcaster.sendTransform(self.t)
+
          
            if self.is_filter == True:
             self.publish_marker(self.X[:2,0], -self.angle, "with_filter")
@@ -407,7 +424,7 @@ class OpticalFlowVelNode(Node):
 
 
            self.distance += np.linalg.norm(self.X[:2,0])
-           print(self.distance)
+           print(self.quaternion)
          
            if self.counter == 0:
              self.ave_dist_list = np.mean(ave_dist)

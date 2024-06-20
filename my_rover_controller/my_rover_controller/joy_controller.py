@@ -18,18 +18,25 @@ class JoyNode(Node):
         self.get_logger().info("Node been started")
         self.joy_subscriber_= self.create_subscription(Joy, "joy", self.joy_recived_command, 10)
 
-    def timer_callback(self):
-         vel = Twist()
-         vel.linear.x = 1.0
-         self.joy_pub.publish(vel)
-
-
     def joy_recived_command(self, msg):
          joy = msg
          ps = Joy()
+         ps.buttons
          velocity = Twist()
-         velocity.linear.x = joy.axes[1]
+         if joy.buttons[6] == 0:
+            velocity.linear.x = joy.buttons[8]*1.0
+            if joy.buttons[7] == 1:
+                velocity.linear.x = joy.buttons[7]*-1.0
+                velocity.angular.z = joy.axes[0]
+            else:
+                velocity.angular.z = joy.axes[0]
+
+         else:
+            velocity.linear.x = joy.axes[1]*joy.buttons[8]*4
+            velocity.linear.z = float(joy.buttons[0])
+            velocity.angular.z = joy.axes[0]*4
          self.joy_pub.publish(velocity)
+         print(joy.buttons[6])
 
 
 
