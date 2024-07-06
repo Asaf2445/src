@@ -91,6 +91,7 @@ class OpticalFlowVelNode(Node):
         self.distance = 0
         self.a_x = 0
         self.a_y = 0
+        self.real_vector = [0, 0]
 
         # Initialize Kalman filter variables]
   # Initial state estimate [position, velocity]
@@ -100,7 +101,7 @@ class OpticalFlowVelNode(Node):
         self.Q = np.eye(4) * 0.05  # Process noise covariance
         self.R = np.eye(4) * 0.05  # Measurement noise covariance
   # State transition matrix
-        self.H = np.array([[0, 0, 0, 0],
+        self.H = np.array([[1, 0, 0, 0],
                            [0, 1, 0, 0],
                            [0, 0, 1, 0],
                            [0, 0, 0, 1]])  # Measurement matrix
@@ -130,7 +131,7 @@ class OpticalFlowVelNode(Node):
         else:
          if np.linalg.norm(step) !=0:
             trans_product = np.dot(rotation_matrix, np.array((step[0], -step[1])))
-            self.point = self.point+trans_product
+            self.point = trans_product
             self.t.transform.translation.x =self.point[0]
             self.t.transform.translation.y = self.point[1]
         #self.point = [self.point[0]+step[0], self.point[1]-step[1]]
@@ -392,7 +393,6 @@ class OpticalFlowVelNode(Node):
               pass
            else:
             ave_dist, real_vector, img_vector = self.get_average_velocity(static_features)   
-
          
            #Kalman filter
            z_k = np.array([[real_vector[0]],[real_vector[1]], [real_vector[0]/self.delta_t_img], [real_vector[1]/self.delta_t_img]])
