@@ -95,13 +95,15 @@ class OpticalFlowVelNode(Node):
         self.a_y = 0
         self.position_measure = np.array([[0],[0]])   
         self.rotation_matrix = np.zeros((2,2)) 
+        self.a_x_mean = []
+        self.a_y_mean = []
 
         # Initialize Kalman filter variables]
   # Initial state estimate [position, velocity]
   
         self.X = np.zeros((4,1))
         self.P = np.eye(4)         # Initial covariance matrix
-        self.Q = np.eye(4) * 0.01  # Process noise covariance
+        self.Q = np.eye(4) * 0.5  # Process noise covariance
         self.R = np.eye(4) * 0.01  # Measurement noise covariance
   # State transition matrix
         self.H = np.array([[1, 0, 0, 0],
@@ -354,16 +356,16 @@ class OpticalFlowVelNode(Node):
       return np.rad2deg(roll), np.rad2deg(pitch), yaw
     
     def imu_callback(self, imu_msg):
-   
+     g = np.array([0.0, 0.0, 9.81])  # Gravity vector
      self.A = np.array([[1, 0, self.delta_t, 0],
                             [0, 1, 0,self.delta_t],
                             [0, 0, 1, 0],
                             [0, 0, 0, 1]])
 
-     self.B = np.array([    [   0.5*self.delta_t**2,         0,],
-                            [   0,          0.5*self.delta_t**2],
-                            [self.delta_t, 0],
-                            [0, self.delta_t]])     
+     self.B = np.array([[0.5*self.delta_t**2*np.cos(self.yaw), -0.5*self.delta_t**2*np.sin(self.yaw)],
+                        [0.5*self.delta_t**2*np.sin(self.yaw),  0.5*self.delta_t**2*np.cos(self.yaw)],
+                        [       self.delta_t*np.cos(self.yaw),       -self.delta_t*np.sin(self.yaw)],
+                        [       self.delta_t*np.sin(self.yaw),        self.delta_t*np.cos(self.yaw)]])     
 
      
 
@@ -387,16 +389,23 @@ class OpticalFlowVelNode(Node):
      self.t.transform.rotation.x = self.quaternion.x
      self.t.transform.rotation.y = self.quaternion.y
      self.t.transform.rotation.z = -self.quaternion.z 
-     self.t.transform.rotation.w = self.quaternion.w 
+     self.t.transform.rotation.w = self.quaternion.w
      self.tf_broadcaster.sendTransform(self.t)
 
-     g = np.array([0.0, 0.0, 9.81])  # Gravity vector
+     if len(self.a_x_mean) < 30 :
+        self.a_x_mean.append(imu_msg.linear_acceleration.x)
+        self.a_y_mean.append(imu_msg.linear_acceleration.y)
+        self.a_x, self.a_y, a_z = 0, 0, 0
+     else:
+        x_mean = sum(self.a_x_mean)/len(self.a_x_mean)
+        y_mean = sum(self.a_y_mean)/len(self.a_y_mean)
+        self.a_x = imu_msg.linear_acceleration.x - g[1] - x_mean
+        self.a_y = (imu_msg.linear_acceleration.y + g[0] - y_mean)
+
 
      g = self.rotate_vector(g, self.quaternion.w, self.quaternion.x, self.quaternion.y, self.quaternion.z)
-     self.a_x = imu_msg.linear_acceleration.x - g[1]
-     self.a_y = imu_msg.linear_acceleration.y + g[0]
-     a = np.sqrt(self.a_x**2 + self.a_y**2)
-     u = np.dot(self.rotation_matrix, np.array([[self.a_x], [self.a_y]]))
+
+     u = np.array([[self.a_x], [self.a_y]])
      
      self.X = np.dot(self.A, self.X) + np.dot(self.B, u) 
      self.P = np.dot(np.dot(self.A, self.P), self.A.T) + self.Q
@@ -457,7 +466,7 @@ class OpticalFlowVelNode(Node):
            y_k = z_k - np.dot(self.H, self.X)
            S_k = self.R + np.dot(np.dot(self.H, self.P), self.H.T)
            K_k = np.dot(np.dot(self.P, self.H.T), np.linalg.inv(S_k))
-          #  self.X = self.X + np.dot(K_k, y_k) 
+           self.X = self.X + np.dot(K_k, y_k) 
            self.P = np.dot((np.eye(4) - np.dot(K_k, self.H)), self.P)
 
 
