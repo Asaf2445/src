@@ -99,7 +99,7 @@ class OpticalFlowVelNode(Node):
   
         self.X = np.zeros((4,1))
         self.P = np.eye(4)         # Initial covariance matrix
-        self.Q = np.eye(4) * 0.1  # Process noise covariance
+        self.Q = np.eye(4) * 0.01  # Process noise covariance
         self.R = np.eye(4) * 0.01  # Measurement noise covariance
   # State transition matrix
         self.H = np.array([[1, 0, 0, 0],
@@ -312,6 +312,28 @@ class OpticalFlowVelNode(Node):
           return 1
       else:
         return 0
+      
+    def quaternion_to_rotation_matrix(self,q_w, q_x, q_y, q_z):
+      n = q_w*q_w + q_x*q_x + q_y*q_y + q_z*q_z
+      s = 2.0/n if n != 0 else 0.0
+      wx, wy, wz = s*q_w*q_x, s*q_w*q_y, s*q_w*q_z
+      xx, xy, xz = s*q_x*q_x, s*q_x*q_y, s*q_x*q_z
+      yy, yz, zz = s*q_y*q_y, s*q_y*q_z, s*q_z*q_z
+
+      return np.array([
+          [1.0 - (yy + zz), xy - wz, xz + wy],
+          [xy + wz, 1.0 - (xx + zz), yz - wx],
+          [xz - wy, yz + wx, 1.0 - (xx + yy)]
+    ])
+
+    def rotate_vector(self,v, q_w, q_x, q_y, q_z):
+    
+      rotation_matrix = self.quaternion_to_rotation_matrix(q_w, q_x, q_y, q_z)
+
+      return np.dot(rotation_matrix, v)
+
+# Example usage
+
     def quaternion_to_euler(self,q_w, q_x, q_y, q_z):
     # Roll (x-axis rotation)
       sinr_cosp = 2 * (q_w * q_x + q_y * q_z)
@@ -327,7 +349,7 @@ class OpticalFlowVelNode(Node):
       cosy_cosp = 1 - 2 * (q_y * q_y + q_z * q_z)
       yaw = np.arctan2(siny_cosp, cosy_cosp) - np.pi /2
 
-      return roll, pitch, yaw
+      return np.rad2deg(roll), np.rad2deg(pitch), np.rad2deg(yaw)
     
     def imu_callback(self, imu_msg):
    
@@ -336,8 +358,8 @@ class OpticalFlowVelNode(Node):
                             [0, 0, 1, 0],
                             [0, 0, 0, 1]])
 
-     self.B = np.array([    [   0,         0,],
-                            [   0,          0],
+     self.B = np.array([    [   0.5*self.delta_t**2,         0,],
+                            [   0,          0.5*self.delta_t**2],
                             [self.delta_t, 0],
                             [0, self.delta_t]])     
 
@@ -357,20 +379,22 @@ class OpticalFlowVelNode(Node):
      self.rotation_matrix = np.array([[np.cos(yaw), -np.sin(yaw)],
                                      [np.sin(yaw), np.cos(yaw)]])
 
-     g_x = 9.81 * np.sin(pitch)
-     g_y = 9.81 * np.sin(roll) * np.cos(pitch)
-     g_z = 9.81 * np.cos(roll) * np.cos(pitch)
+     g = np.array([0.0, 0.0, 9.81])  # Gravity vector
 
-     self.a_x = imu_msg.linear_acceleration.x 
-     self.a_y = imu_msg.linear_acceleration.y 
+     g = self.rotate_vector(g, self.quaternion.w, self.quaternion.x, self.quaternion.y, self.quaternion.z)
+     self.a_x = imu_msg.linear_acceleration.x -g[1]
+     self.a_y = imu_msg.linear_acceleration.y  +g[0]
      a = np.sqrt(self.a_x**2 + self.a_y**2)
-     u = np.dot(self.rotation_matrix, np.array([[self.a_y], [self.a_x]]))
+     u = np.dot(self.rotation_matrix, np.array([[self.a_x], [self.a_y]]))
+     
      self.X = np.dot(self.A, self.X) + np.dot(self.B, u) 
      self.P = np.dot(np.dot(self.A, self.P), self.A.T) + self.Q
      #self.P = np.dot(np.dot(self.A, self.P), self.A.T) + np.dot(self.B, self.B.T)*0.01**2
-
-   
+     print([imu_msg.linear_acceleration_covariance])
     #def callback_image(self, image_msg, imu_msg):
+
+
+
     def callback_image(self, image_msg):
        self.frame = self.cv_bridge.compressed_imgmsg_to_cv2(image_msg,'bgr8')
        self.frame = self.frame[0:500, 200:1200]
@@ -412,7 +436,7 @@ class OpticalFlowVelNode(Node):
               pass
            else:
             ave_dist, real_vector, img_vector = self.get_average_velocity(static_features)   
-            correct_measure = np.dot(self.rotation_matrix, np.array([[real_vector[0]], [real_vector[1]]]))
+            correct_measure = np.dot(self.rotation_matrix, np.array([[real_vector[1]], [real_vector[0]]]))
            self.position_measure = self.position_measure.astype(np.float64)
            self.position_measure += correct_measure
            #Kalman filter
