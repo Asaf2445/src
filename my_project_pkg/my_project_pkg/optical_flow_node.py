@@ -27,7 +27,9 @@ class OpticalFlowVelNode(Node):
         super().__init__('optical_flow_run')
         self.is_filter = self.declare_parameter("filter",value=1).value
         #self.subscriber_= self.create_subscription(Image,'undistort_image',self.callback_image, 10)
+        self.fisheye_subscriber= self.create_subscription(CompressedImage,'/usb_cam/image_raw/compressed',self.callback_image, 10)
         self.fisheye_subscriber= self.create_subscription(CompressedImage,'/fisheye_cam/image_raw/compressed',self.callback_image, 10)
+        
         self.gyro_subscriber= self.create_subscription(Imu,'/imu/data',self.imu_callback, 10)
 
         self.tf_broadcaster = TransformBroadcaster(self)
@@ -82,7 +84,7 @@ class OpticalFlowVelNode(Node):
         self.ave_vel = 0.0
         self.contour_counter = 0
         self.elapsed_time = None
-        self.angle = 0
+        self.yaw = 0
         self.deviation_list = []
         self.temp_deviation = 0
         self.previous_timestamp = None
@@ -349,7 +351,7 @@ class OpticalFlowVelNode(Node):
       cosy_cosp = 1 - 2 * (q_y * q_y + q_z * q_z)
       yaw = np.arctan2(siny_cosp, cosy_cosp) - np.pi /2
 
-      return np.rad2deg(roll), np.rad2deg(pitch), np.rad2deg(yaw)
+      return np.rad2deg(roll), np.rad2deg(pitch), yaw
     
     def imu_callback(self, imu_msg):
    
@@ -374,26 +376,35 @@ class OpticalFlowVelNode(Node):
      self.prev_time = imu_msg.header.stamp.sec + imu_msg.header.stamp.nanosec * 1e-9  # Convert nanoseconds to seconds
      self.quaternion = imu_msg.orientation
 
-     roll, pitch, yaw = self.quaternion_to_euler(self.quaternion.w, self.quaternion.x, self.quaternion.y, self.quaternion.z)
+     roll, pitch, self.yaw = self.quaternion_to_euler(self.quaternion.w, self.quaternion.x, self.quaternion.y, self.quaternion.z)
 
-     self.rotation_matrix = np.array([[np.cos(yaw), -np.sin(yaw)],
-                                     [np.sin(yaw), np.cos(yaw)]])
+     self.rotation_matrix = np.array([[np.cos(self.yaw), -np.sin(self.yaw)],
+                                     [np.sin(self.yaw), np.cos(self.yaw)]])
+
+     self.t.header.stamp = self.get_clock().now().to_msg()
+     self.t.header.frame_id = 'world'
+     self.t.child_frame_id = 'odom'
+     self.t.transform.rotation.x = self.quaternion.x
+     self.t.transform.rotation.y = self.quaternion.y
+     self.t.transform.rotation.z = -self.quaternion.z 
+     self.t.transform.rotation.w = self.quaternion.w 
+     self.tf_broadcaster.sendTransform(self.t)
 
      g = np.array([0.0, 0.0, 9.81])  # Gravity vector
 
      g = self.rotate_vector(g, self.quaternion.w, self.quaternion.x, self.quaternion.y, self.quaternion.z)
-     self.a_x = imu_msg.linear_acceleration.x -g[1]
-     self.a_y = imu_msg.linear_acceleration.y  +g[0]
+     self.a_x = imu_msg.linear_acceleration.x - g[1]
+     self.a_y = imu_msg.linear_acceleration.y + g[0]
      a = np.sqrt(self.a_x**2 + self.a_y**2)
      u = np.dot(self.rotation_matrix, np.array([[self.a_x], [self.a_y]]))
      
      self.X = np.dot(self.A, self.X) + np.dot(self.B, u) 
      self.P = np.dot(np.dot(self.A, self.P), self.A.T) + self.Q
      #self.P = np.dot(np.dot(self.A, self.P), self.A.T) + np.dot(self.B, self.B.T)*0.01**2
-     print([imu_msg.linear_acceleration_covariance])
+    #  print([imu_msg.linear_acceleration_covariance])
     #def callback_image(self, image_msg, imu_msg):
 
-
+     print(u)
 
     def callback_image(self, image_msg):
        self.frame = self.cv_bridge.compressed_imgmsg_to_cv2(image_msg,'bgr8')
@@ -436,26 +447,19 @@ class OpticalFlowVelNode(Node):
               pass
            else:
             ave_dist, real_vector, img_vector = self.get_average_velocity(static_features)   
-            correct_measure = np.dot(self.rotation_matrix, np.array([[real_vector[1]], [real_vector[0]]]))
+           correct_measure = np.dot(self.rotation_matrix, np.array([[real_vector[1]], [real_vector[0]]]))
            self.position_measure = self.position_measure.astype(np.float64)
+          #  self.position_measure[0,0] += real_vector[1]*np.cos(self.yaw) - real_vector[0]*np.sin(self.yaw)
+          #  self.position_measure[1,0] += real_vector[1]*np.sin(self.yaw) +real_vector[0]*np.cos(self.yaw)
            self.position_measure += correct_measure
            #Kalman filter
            z_k = np.array([[self.position_measure[0]],[self.position_measure[1]], [correct_measure[0]/self.delta_t_img], [correct_measure[1]/self.delta_t_img]])
            y_k = z_k - np.dot(self.H, self.X)
            S_k = self.R + np.dot(np.dot(self.H, self.P), self.H.T)
            K_k = np.dot(np.dot(self.P, self.H.T), np.linalg.inv(S_k))
-           self.X = self.X + np.dot(K_k, y_k) 
+          #  self.X = self.X + np.dot(K_k, y_k) 
            self.P = np.dot((np.eye(4) - np.dot(K_k, self.H)), self.P)
 
-           self.t.header.stamp = self.get_clock().now().to_msg()
-           self.t.header.frame_id = 'world'
-           self.t.child_frame_id = 'odom'
-           self.t.transform.rotation.x = self.quaternion.x
-           self.t.transform.rotation.y = self.quaternion.y
-           self.t.transform.rotation.z = -self.quaternion.z 
-           self.t.transform.rotation.w = self.quaternion.w 
-          
-           self.tf_broadcaster.sendTransform(self.t)
 
          
            if self.is_filter == True:
@@ -463,7 +467,7 @@ class OpticalFlowVelNode(Node):
             # self.publish_marker(self.position_measure, "with_filter")
 
            else:
-            self.publish_marker(self.position_measure, "without_filter")
+            self.publish_marker([self.position_measure[0], self.position_measure[1]], "without_filter")
 
 
            self.distance += np.linalg.norm(self.X[:2,0])
