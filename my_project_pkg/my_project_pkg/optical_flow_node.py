@@ -71,7 +71,7 @@ class OpticalFlowVelNode(Node):
         self.yfocal = camera_matrix[1, 1]
         self.Cx = camera_matrix[2, 2]
         self.Cy = camera_matrix[1, 2]
-        self.z = 1100
+        self.z = 1500
         self.frame_count = 0
         self.param_factor = 50/30.24727637
         self.Flag = 0
@@ -104,14 +104,14 @@ class OpticalFlowVelNode(Node):
         self.X = np.zeros((4,1))
         self.P = np.eye(4)         # Initial covariance matrix
         self.Q = np.array([[1e-4, 0, 0, 0],
-                           [0, 1e-8, 0, 0],
-                           [0, 0, 1e-2, 0],
-                           [0, 0, 0, 1e-6]])*5# Process noise covariance
-
-        self.R = np.array([[1e-2, 0, 0, 0],
                            [0, 1e-2, 0, 0],
-                           [0, 0, 1e-1, 0],
-                           [0, 0, 0, 1e-1]])/10  # Measurement noise covariance
+                           [0, 0, 1e-4, 0],
+                           [0, 0, 0, 1e-2]])/7# Process noise covariance
+
+        self.R = np.array([[0.3, 0, 0, 0],
+                           [0, 0.3, 0, 0],
+                           [0, 0, 1e-3, 0],
+                           [0, 0, 0, 1e-3]])/10  # Measurement noise covariance
   # State transition matrix
         self.H = np.array([[1, 0, 0, 0],
                            [0, 1, 0, 0],
@@ -369,14 +369,14 @@ class OpticalFlowVelNode(Node):
      
 
      g = np.array([0.0, 0.0, 9.81])  # Gravity vector
-     self.A = np.array([[0, 0, self.delta_t, 0],
-                        [0, 0, 0, self.delta_t],
+     self.A = np.array([[0, self.delta_t,  0, 0],
                         [0, 0, 0, 0],
-                        [0, 0, 0, 0]])
+                        [0, 1, 0, self.delta_t],
+                        [0, 0, 0, 1]])
 
      self.B = np.array([[0.5*self.delta_t**2, 0],
+                        [self.delta_t, 0 ],
                         [0, 0.5*self.delta_t**2],
-                        [self.delta_t, 0],
                         [0, self.delta_t]])     
 
      
@@ -417,7 +417,7 @@ class OpticalFlowVelNode(Node):
 
 
 
-     u = np.array([[self.a_x], [self.a_y]])
+     u = np.array([[self.a_y], [self.a_x]])
      
      self.X = np.dot(self.A, self.X) + self.B @ u
      self.P = np.dot(np.dot(self.A, self.P), self.A.T) + self.Q
@@ -472,7 +472,7 @@ class OpticalFlowVelNode(Node):
            self.position_measure = self.position_measure.astype(np.float64)
           #  self.position_measure += correct_measure
            #Kalman filter
-           z_k = np.array([[real_vector[0]*0.01],[(real_vector[0]/self.delta_t_img)*0.01], [real_vector[1]], [real_vector[1]/self.delta_t_img]])
+           z_k = np.array([[real_vector[0]],[(real_vector[0]/self.delta_t_img)], [real_vector[1]], [real_vector[1]/self.delta_t_img]])
            y_k = z_k - np.dot(self.H, self.X)
            S_k = self.R + np.dot(np.dot(self.H, self.P), self.H.T)
            K_k = np.dot(np.dot(self.P, self.H.T), np.linalg.inv(S_k))
