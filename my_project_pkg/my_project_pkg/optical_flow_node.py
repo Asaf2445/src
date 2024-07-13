@@ -97,14 +97,21 @@ class OpticalFlowVelNode(Node):
         self.rotation_matrix = np.zeros((2,2)) 
         self.a_x_mean = []
         self.a_y_mean = []
-
+        self.msg_counter =0
         # Initialize Kalman filter variables]
   # Initial state estimate [position, velocity]
   
         self.X = np.zeros((4,1))
         self.P = np.eye(4)         # Initial covariance matrix
-        self.Q = np.eye(4) * 0.5  # Process noise covariance
-        self.R = np.eye(4) * 0.01  # Measurement noise covariance
+        self.Q = np.array([[1e-4, 0, 0, 0],
+                           [0, 1e-8, 0, 0],
+                           [0, 0, 1e-2, 0],
+                           [0, 0, 0, 1e-6]])*5# Process noise covariance
+
+        self.R = np.array([[1e-2, 0, 0, 0],
+                           [0, 1e-2, 0, 0],
+                           [0, 0, 1e-1, 0],
+                           [0, 0, 0, 1e-1]])/10  # Measurement noise covariance
   # State transition matrix
         self.H = np.array([[1, 0, 0, 0],
                            [0, 1, 0, 0],
@@ -123,8 +130,11 @@ class OpticalFlowVelNode(Node):
         contour_marker.scale.x = 0.1  # Line width
         if namespace == "with_filter":
           contour_marker.color.r = 1.0  # Red
-        else:
+        elif namespace == "measurement_only":
            contour_marker.color.b = 1.0 # blue
+        else:
+           contour_marker.color.g = 1.0 # blue
+
         contour_marker.color.a = 1.0  # Fully opaque
         contour_marker.ns = f"{namespace}"
 
@@ -353,19 +363,21 @@ class OpticalFlowVelNode(Node):
       cosy_cosp = 1 - 2 * (q_y * q_y + q_z * q_z)
       yaw = np.arctan2(siny_cosp, cosy_cosp) - np.pi /2
 
-      return np.rad2deg(roll), np.rad2deg(pitch), yaw
+      return np.rad2deg(roll), np.rad2deg(pitch), -yaw
     
     def imu_callback(self, imu_msg):
-     g = np.array([0.0, 0.0, 9.81])  # Gravity vector
-     self.A = np.array([[1, 0, self.delta_t, 0],
-                            [0, 1, 0,self.delta_t],
-                            [0, 0, 1, 0],
-                            [0, 0, 0, 1]])
+     
 
-     self.B = np.array([[0.5*self.delta_t**2*np.cos(self.yaw), -0.5*self.delta_t**2*np.sin(self.yaw)],
-                        [0.5*self.delta_t**2*np.sin(self.yaw),  0.5*self.delta_t**2*np.cos(self.yaw)],
-                        [       self.delta_t*np.cos(self.yaw),       -self.delta_t*np.sin(self.yaw)],
-                        [       self.delta_t*np.sin(self.yaw),        self.delta_t*np.cos(self.yaw)]])     
+     g = np.array([0.0, 0.0, 9.81])  # Gravity vector
+     self.A = np.array([[0, 0, self.delta_t, 0],
+                        [0, 0, 0, self.delta_t],
+                        [0, 0, 0, 0],
+                        [0, 0, 0, 0]])
+
+     self.B = np.array([[0.5*self.delta_t**2, 0],
+                        [0, 0.5*self.delta_t**2],
+                        [self.delta_t, 0],
+                        [0, self.delta_t]])     
 
      
 
@@ -391,7 +403,7 @@ class OpticalFlowVelNode(Node):
      self.t.transform.rotation.z = -self.quaternion.z 
      self.t.transform.rotation.w = self.quaternion.w
      self.tf_broadcaster.sendTransform(self.t)
-
+     g = self.rotate_vector(g, self.quaternion.w, self.quaternion.x, self.quaternion.y, self.quaternion.z)
      if len(self.a_x_mean) < 30 :
         self.a_x_mean.append(imu_msg.linear_acceleration.x)
         self.a_y_mean.append(imu_msg.linear_acceleration.y)
@@ -399,21 +411,21 @@ class OpticalFlowVelNode(Node):
      else:
         x_mean = sum(self.a_x_mean)/len(self.a_x_mean)
         y_mean = sum(self.a_y_mean)/len(self.a_y_mean)
-        self.a_x = imu_msg.linear_acceleration.x - g[1] - x_mean
+        self.a_x = imu_msg.linear_acceleration.x + g[1] - x_mean
         self.a_y = (imu_msg.linear_acceleration.y + g[0] - y_mean)
 
 
-     g = self.rotate_vector(g, self.quaternion.w, self.quaternion.x, self.quaternion.y, self.quaternion.z)
+
 
      u = np.array([[self.a_x], [self.a_y]])
      
-     self.X = np.dot(self.A, self.X) + np.dot(self.B, u) 
+     self.X = np.dot(self.A, self.X) + self.B @ u
      self.P = np.dot(np.dot(self.A, self.P), self.A.T) + self.Q
+     print(self.delta_t)
      #self.P = np.dot(np.dot(self.A, self.P), self.A.T) + np.dot(self.B, self.B.T)*0.01**2
     #  print([imu_msg.linear_acceleration_covariance])
     #def callback_image(self, image_msg, imu_msg):
 
-     print(u)
 
     def callback_image(self, image_msg):
        self.frame = self.cv_bridge.compressed_imgmsg_to_cv2(image_msg,'bgr8')
@@ -456,30 +468,35 @@ class OpticalFlowVelNode(Node):
               pass
            else:
             ave_dist, real_vector, img_vector = self.get_average_velocity(static_features)   
-           correct_measure = np.dot(self.rotation_matrix, np.array([[real_vector[1]], [real_vector[0]]]))
+          #  correct_measure = np.dot(self.rotation_matrix, np.array([[real_vector[1]], [real_vector[0]]]))
            self.position_measure = self.position_measure.astype(np.float64)
-          #  self.position_measure[0,0] += real_vector[1]*np.cos(self.yaw) - real_vector[0]*np.sin(self.yaw)
-          #  self.position_measure[1,0] += real_vector[1]*np.sin(self.yaw) +real_vector[0]*np.cos(self.yaw)
-           self.position_measure += correct_measure
+          #  self.position_measure += correct_measure
            #Kalman filter
-           z_k = np.array([[self.position_measure[0]],[self.position_measure[1]], [correct_measure[0]/self.delta_t_img], [correct_measure[1]/self.delta_t_img]])
+           z_k = np.array([[real_vector[0]*0.01],[(real_vector[0]/self.delta_t_img)*0.01], [real_vector[1]], [real_vector[1]/self.delta_t_img]])
            y_k = z_k - np.dot(self.H, self.X)
            S_k = self.R + np.dot(np.dot(self.H, self.P), self.H.T)
            K_k = np.dot(np.dot(self.P, self.H.T), np.linalg.inv(S_k))
-           self.X = self.X + np.dot(K_k, y_k) 
+           if self.is_filter == True:  
+            self.X = self.X + np.dot(K_k, y_k) 
            self.P = np.dot((np.eye(4) - np.dot(K_k, self.H)), self.P)
 
 
-         
+
+           
            if self.is_filter == True:
-            self.publish_marker([self.X[0,0], self.X[1,0]], "with_filter")
+            self.position_measure += np.dot(self.rotation_matrix, np.array([[self.X[0,0]], [self.X[2,0]]]))
+            self.publish_marker(self.position_measure, "with_filter")
             # self.publish_marker(self.position_measure, "with_filter")
 
-           else:
-            self.publish_marker([self.position_measure[0], self.position_measure[1]], "without_filter")
+           elif self.is_filter == 0:
+            self.position_measure += np.dot(self.rotation_matrix, np.array([[real_vector[0]], [real_vector[1]]]))
+            self.publish_marker(self.position_measure, "measurement_only")
+           else: 
+            self.position_measure += np.dot(self.rotation_matrix, np.array([[self.X[0,0]], [self.X[2,0]]]))
+            self.publish_marker(self.position_measure, "model_only")
 
 
-           self.distance += np.linalg.norm(self.X[:2,0])
+           self.distance = np.linalg.norm(self.X[:2,0])
          
            if self.counter == 0:
              self.ave_dist_list = np.mean(ave_dist)
