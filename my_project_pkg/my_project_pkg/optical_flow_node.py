@@ -28,7 +28,7 @@ class OpticalFlowVelNode(Node):
         self.is_filter = self.declare_parameter("filter",value=1).value
         #self.subscriber_= self.create_subscription(Image,'undistort_image',self.callback_image, 10)
         self.fisheye_subscriber= self.create_subscription(CompressedImage,'/usb_cam/image_raw/compressed',self.callback_image, 10)
-        self.fisheye_subscriber= self.create_subscription(CompressedImage,'/fisheye_cam/image_raw/compressed',self.callback_image, 10)
+        self.fisheye_subscriber= self.create_subscription(CompressedImage,'/image_raw/compressed',self.callback_image, 10)
         
         self.gyro_subscriber= self.create_subscription(Imu,'/imu/data',self.imu_callback, 10)
 
@@ -71,7 +71,7 @@ class OpticalFlowVelNode(Node):
         self.yfocal = camera_matrix[1, 1]
         self.Cx = camera_matrix[2, 2]
         self.Cy = camera_matrix[1, 2]
-        self.z = 1500
+        self.z = 1600
         self.frame_count = 0
         self.param_factor = 50/30.24727637
         self.Flag = 0
@@ -106,12 +106,12 @@ class OpticalFlowVelNode(Node):
         self.Q = np.array([[1e-4, 0, 0, 0],
                            [0, 1e-2, 0, 0],
                            [0, 0, 1e-4, 0],
-                           [0, 0, 0, 1e-2]])/7# Process noise covariance
+                           [0, 0, 0, 1e-2]])*0.5# Process noise covariance
 
         self.R = np.array([[0.3, 0, 0, 0],
                            [0, 0.3, 0, 0],
                            [0, 0, 1e-3, 0],
-                           [0, 0, 0, 1e-3]])/10  # Measurement noise covariance
+                           [0, 0, 0, 1e-3]])*0.1  # Measurement noise covariance
   # State transition matrix
         self.H = np.array([[1, 0, 0, 0],
                            [0, 1, 0, 0],
@@ -371,8 +371,8 @@ class OpticalFlowVelNode(Node):
      g = np.array([0.0, 0.0, 9.81])  # Gravity vector
      self.A = np.array([[0, self.delta_t,  0, 0],
                         [0, 0, 0, 0],
-                        [0, 1, 0, self.delta_t],
-                        [0, 0, 0, 1]])
+                        [0, 0, 0, self.delta_t],
+                        [0, 0, 0, 0]])
 
      self.B = np.array([[0.5*self.delta_t**2, 0],
                         [self.delta_t, 0 ],
@@ -404,6 +404,7 @@ class OpticalFlowVelNode(Node):
      self.t.transform.rotation.w = self.quaternion.w
      self.tf_broadcaster.sendTransform(self.t)
      g = self.rotate_vector(g, self.quaternion.w, self.quaternion.x, self.quaternion.y, self.quaternion.z)
+
      if len(self.a_x_mean) < 30 :
         self.a_x_mean.append(imu_msg.linear_acceleration.x)
         self.a_y_mean.append(imu_msg.linear_acceleration.y)
@@ -411,8 +412,8 @@ class OpticalFlowVelNode(Node):
      else:
         x_mean = sum(self.a_x_mean)/len(self.a_x_mean)
         y_mean = sum(self.a_y_mean)/len(self.a_y_mean)
-        self.a_x = imu_msg.linear_acceleration.x + g[1] - x_mean
-        self.a_y = (imu_msg.linear_acceleration.y + g[0] - y_mean)
+        self.a_x = imu_msg.linear_acceleration.x 
+        self.a_y = (imu_msg.linear_acceleration.y    )
 
 
 
@@ -421,7 +422,7 @@ class OpticalFlowVelNode(Node):
      
      self.X = np.dot(self.A, self.X) + self.B @ u
      self.P = np.dot(np.dot(self.A, self.P), self.A.T) + self.Q
-     print(self.delta_t)
+     print(u)
      #self.P = np.dot(np.dot(self.A, self.P), self.A.T) + np.dot(self.B, self.B.T)*0.01**2
     #  print([imu_msg.linear_acceleration_covariance])
     #def callback_image(self, image_msg, imu_msg):
@@ -476,7 +477,7 @@ class OpticalFlowVelNode(Node):
            y_k = z_k - np.dot(self.H, self.X)
            S_k = self.R + np.dot(np.dot(self.H, self.P), self.H.T)
            K_k = np.dot(np.dot(self.P, self.H.T), np.linalg.inv(S_k))
-           if self.is_filter == True:  
+           if self.is_filter == 1:  
             self.X = self.X + np.dot(K_k, y_k) 
            self.P = np.dot((np.eye(4) - np.dot(K_k, self.H)), self.P)
 
